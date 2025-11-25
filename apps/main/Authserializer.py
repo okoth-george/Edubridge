@@ -143,5 +143,16 @@ class ChangePasswordSerializer(serializers.Serializer):
         # Add any password strength validation here if needed
         return value
 class ConfirmPasswordSerializer(serializers.Serializer):
-    pass
+    # token can be provided in the request body or as a query param.
+    # Make it optional here and let the view check query params too.
+    token = serializers.CharField(required=False)
+    new_password = serializers.CharField(write_only=True, required=True)
+    confirm_password = serializers.CharField(write_only=True, required=True)
+
+    def validate(self, data):
+        new_password = data.get('new_password')
+        confirm_password = data.get('confirm_password')
+        if new_password != confirm_password:
+            raise serializers.ValidationError("New password and confirm password do not match")
+        return data
        

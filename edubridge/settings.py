@@ -14,6 +14,7 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
+
 load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -49,9 +50,12 @@ INSTALLED_APPS = [
     'apps.bursaries',   
     'apps.main.apps.MainConfig',
     'anymail',
+    'corsheaders',
+    'django.contrib.sites',
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -60,6 +64,14 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+CORS_ALLOW_ALL_ORIGINS = True
+
+CORS_ALLOWED_ORIGINS = [
+    
+    "https://127.0.0.1:8080",
+]
+
 
 ROOT_URLCONF = 'edubridge.urls'
 
@@ -100,6 +112,7 @@ CACHES = {
         }
     }
 }
+
 
 
 # Password validation
@@ -157,10 +170,54 @@ AUTH_USER_MODEL = 'main.User'
 
 EMAIL_BACKEND = 'anymail.backends.sendinblue.EmailBackend' 
 
-ANYMAIL = {
+
+ANYMAIL = { 
    
     "SENDINBLUE_API_KEY": os.getenv("SENDINBLUE_API_KEY"),
+  
    
 }
 
 DEFAULT_FROM_EMAIL = 'okothgeorge911@gmail.com'
+
+# Frontend base URL used when constructing password-reset links sent by email.
+# Set in environment as FRONTEND_URL or defaults to localhost:3000 for development.
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:8080')
+
+# settings.py
+
+# 1. Point to your React Frontend (NOT localhost:8000)
+# settings.py
+
+DJOSER = {
+    'LOGIN_FIELD': 'email',
+    'USER_CREATE_PASSWORD_RETYPE': True,
+    'USERNAME_CHANGED_EMAIL_CONFIRMATION': True,
+    'PASSWORD_CHANGED_EMAIL_CONFIRMATION': True,
+    'SEND_CONFIRMATION_EMAIL': True,
+    'SET_PASSWORD_RETYPE': True,
+    'SEND_ACTIVATION_EMAIL': True,
+
+    # --- FORCE THE LINK CONSTRUCTION ---
+    # 1. Explicitly set the Domain here (bypassing the database)
+    'DOMAIN': 'localhost:8080',
+    
+    # 2. Explicitly set the Name
+    'SITE_NAME': 'EduBridge',
+    
+    # 3. Explicitly set the Protocol (http for localhost, https for production)
+    'PROTOCOL': 'http',
+
+    # 4. The URL Patterns
+    'PASSWORD_RESET_CONFIRM_URL': 'reset-password/{uid}/{token}',
+    'USERNAME_RESET_CONFIRM_URL': 'username/reset/confirm/{uid}/{token}',
+    'ACTIVATION_URL': 'activate/{uid}/{token}',
+
+    # 5. Serializers
+    'SERIALIZERS': {
+        'password_reset_confirm': 'djoser.serializers.PasswordResetConfirmSerializer',
+        'password_reset': 'djoser.serializers.SendEmailResetSerializer',
+    },
+}
+
+SITE_ID = 1

@@ -14,8 +14,15 @@ from rest_framework.decorators import permission_classes
 from utils.email import send_email
 from django.contrib.auth.hashers import make_password
 import random
+from django.conf import settings
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.contrib.auth.tokens import default_token_generator
+from django.conf import settings
+from django.contrib.auth import get_user_model
 
 
+User = get_user_model()
 
 # Create your views here.
 
@@ -71,21 +78,31 @@ class ForgotPasswordView(APIView):
               return Response({"error": "User with this email does not exist"}, status=status.HTTP_404_NOT_FOUND)   
         
             token=str(random.randint(100000,999999))
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
             cache.set(f"reset_token_{email}", token, timeout=600)  # 10 min expiry
             cache.set(f"email_for_token_{token}", email, timeout=600)
-           # verification_tokens[email]=token
+           # verification_tokens[email]=tokenhttp://localhost:8080/reset-password/MQ/571900
 
                  
             try :
                                  
+                # Build a frontend link that includes the token and email as query params.
+               # reset_link = f"{settings.FRONTEND_URL.rstrip('/')}" \
+                   #          f"/reset-password?token={token}&email={email}"
+                reset_link = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password/{uid}/{token}"
+
+                html_message = (
+                    f"<p>We received a request to reset your password.</p>"
+                    f"<p>Click <a href=\"{reset_link}\">here</a> to open the password reset page.</p>"
+                    f"<p>If the link doesn't work, use this token on the reset page: <strong>{token}</strong></p>"
+                )
+
                 send_email(
                     subject="Password Reset Request",
-                    message=f"Your password reset token is: {token}",
-                    #from_email="okothgeorge911@gmail.com",  # must be a verified sender
+                    message=f"Open the link to reset your password: {reset_link}\nOr use token: {token}",
                     recipient_list=[email],
-                    #fail_silently=False,
-                     
-                 )
+                    html_message=html_message,
+                )
 
                 #TODO: Send this token via email (SendGrid, SMTP, etc.)
                 print(f"Password reset token for {email}: {token}")
@@ -122,45 +139,46 @@ class ConfirmPasswordView(APIView):
     permission_classes = [AllowAny]
     def post(self, request):
         serializer = ConfirmPasswordSerializer(data=request.data)
-        if serializer.is_valid():
-            
-          
-            new_password = serializer.validated_data['new_password']
-            confirm_password = serializer.validated_data['confirm_password']
-            token = request.data.get('token')
+        # Accept token either in the request body or as a query param.
+        if not serializer.is_valid():
+            # Provide more context to the client for debugging
+            errors = serializer.errors
+            # If token missing, mention how to provide it
+            if 'token' in errors and not request.query_params.get('token'):
+                errors['token_help'] = 'Provide token in request body (token) or as a query param ?token=...'
+            return Response({'errors': errors, 'received': request.data}, status=status.HTTP_400_BAD_REQUEST)
 
-            email = None
-            for key in cache.iter_keys("verified_email_*"):
-                verified = cache.get(key)
-                if verified:
-                    email = key.replace("verified_email_", "")
-                    break
-                
-            if not email:
-                return Response({"error": "Email not found in session"}, status=status.HTTP_400_BAD_REQUEST)           
+        token = serializer.validated_data.get('token') or request.query_params.get('token')
+        new_password = serializer.validated_data.get('new_password')
 
-           # Check if token verification was done
-            verified = cache.get(f"verified_email_{email}")
-            if not verified:
-               return Response({"error": "Token not verified or session expired"}, status=status.HTTP_403_FORBIDDEN)
-                   
-       # Update the user's password
-            try:
-              user = User.objects.get(email=email)
-              user.password= make_password(new_password)
-              user.save()
+        if not token:
+            return Response({"error": "Token not provided. Include in body as 'token' or as query param '?token='"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Clear the cached data
-              cache.delete(f"reset_token_{email}")
-              cache.delete(f"verified_email_{email}") 
-              cache.delete(f"email_for_token_{token}")
+        # Lookup email associated with this token
+        email = cache.get(f"email_for_token_{token}")
+        if not email:
+            return Response({"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)
 
-              return Response({"message": "Password has been reset successfully"}, status=status.HTTP_200_OK)
+        # Verify the token matches the stored one
+        saved_token = cache.get(f"reset_token_{email}")
+        if saved_token != token:
+            return Response({"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)
 
-            except User.DoesNotExist:
-              return Response({"error": "User with this email does not exist"}, status=status.HTTP_404_NOT_FOUND)
-           
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # Update the user's password
+        try:
+            user = User.objects.get(email=email)
+            user.password = make_password(new_password)
+            user.save()
+
+            # Clear the cached data
+            cache.delete(f"reset_token_{email}")
+            cache.delete(f"verified_email_{email}")
+            cache.delete(f"email_for_token_{token}")
+
+            return Response({"message": "Password has been reset successfully"}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({"error": "User with this email does not exist"}, status=status.HTTP_404_NOT_FOUND)
+    
 
 class ChangePasswordView(APIView):
     permission_classes = [IsAuthenticated]
