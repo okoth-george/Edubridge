@@ -107,7 +107,7 @@ DATABASES = {
     'default': dj_database_url.config(
         default='sqlite:///' + os.path.join(BASE_DIR, 'db.sqlite3'),
         conn_max_age=600,    # Keep connection open for 10 mins (better performance)
-        ssl_require=False    # Set to True if your host requires SSL 
+        ssl_require=True    # Set to True if your host requires SSL 
     )
    # 'default': {
       #  'ENGINE': 'django.db.backends.sqlite3',
